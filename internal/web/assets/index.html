@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>swissy</title>
+<script>
+  document.documentElement.setAttribute("data-theme", "dark");
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/vendor/highlight.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">swissy</div>
+    <nav>
+      <a href="#/totps" data-route="totps">TOTPs</a>
+      <a href="#/mails" data-route="mails">Mails</a>
+      <a href="#/logins" data-route="logins">Logins</a>
+      <a href="#/text" data-route="text">Text</a>
+      <a href="#/time" data-route="time">Time</a>
+      <a href="#/image" data-route="image">Image</a>
+      <a href="#/md" data-route="md">Markdown</a>
+    </nav>
+    <div class="sidebar-content" id="sidebarContent"></div>
+  </aside>
+
+  <main id="main"></main>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box" id="modalBox"></div>
+  </div>
+
+  <div id="toast" class="toast">Copied</div>
+
+  <script src="/vendor/js-yaml.min.js"></script>
+  <script src="/vendor/sql-formatter.min.js"></script>
+  <script src="/vendor/marked.min.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
+  <script src="/totp.js"></script>
+  <script src="/logins.js"></script>
+  <script src="/text.js"></script>
+  <script src="/time.js"></script>
+  <script src="/image.js"></script>
+  <script src="/md.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
