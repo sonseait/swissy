@@ -78,7 +78,7 @@ TEXT_TOOLS.push({
 
 // ---------- JSON ----------
 TEXT_TOOLS.push({
-  id: "json", name: "JSON format", group: "Encode",
+  id: "json", name: "JSON format", group: "Encode", language: "json",
   options: [
     { key: "mode", type: "select", label: "Mode", default: "pretty",
       values: [["pretty", "Pretty"], ["minify", "Minify"], ["sort", "Sort keys + pretty"]] },
@@ -724,7 +724,7 @@ TEXT_TOOLS.push({
 
 // --- SQL formatter ---
 TEXT_TOOLS.push({
-  id: "sqlfmt", name: "SQL formatter", group: "Convert",
+  id: "sqlfmt", name: "SQL formatter", group: "Convert", language: "sql",
   options: [
     { key: "dialect", type: "select", label: "Dialect", default: "sql",
       values: [["sql","Standard"],["postgresql","PostgreSQL"],["mysql","MySQL"],["sqlite","SQLite"],["bigquery","BigQuery"]] },
@@ -796,7 +796,7 @@ TEXT_TOOLS.push({
   run: s => htmlToJsx(s),
 });
 TEXT_TOOLS.push({
-  id: "jsx2h", name: "JSX → HTML", group: "Convert", sync: true,
+  id: "jsx2h", name: "JSX → HTML", group: "Convert", sync: true, language: "xml", outputLanguage: "xml",
   run: s => jsxToHtml(s),
 });
 
@@ -828,6 +828,7 @@ function renderText(toolId) {
 
   // Main
   const opts = tool.options || [];
+  $("#main").classList.add("no-scroll");
   $("#main").innerHTML = `
     <div class="text-header">
       <h1 style="margin:0">${esc(tool.name)}</h1>
@@ -840,8 +841,8 @@ function renderText(toolId) {
     </div>
     ${opts.length ? `<div class="text-options">${opts.map(renderOpt).join("")}</div>` : ""}
     <div class="text-panes">
-      <textarea id="txtIn" class="text-area" placeholder="Input…" spellcheck="false"></textarea>
-      <textarea id="txtOut" class="text-area" placeholder="Output…" spellcheck="false" readonly></textarea>
+      <div id="txtIn" class="code-editor" data-placeholder="Input…"></div>
+      <div id="txtOut" class="code-editor" data-placeholder="Output…" data-readonly="1"></div>
     </div>
     <div class="text-error" id="txtErr" hidden></div>
   `;
@@ -854,12 +855,21 @@ function renderText(toolId) {
     }
   }
 
+  const lang = tool.language || "plain";
+  const inJar = attachCodeEditor($("#txtIn"), lang);
+  const outJar = attachCodeEditor($("#txtOut"), tool.outputLanguage || lang);
+  $("#txtOut").setAttribute("contenteditable", "false");
+  currentTextIn = inJar; currentTextOut = outJar;
+
   const runNow = () => runText();
-  $("#txtIn").addEventListener("input", () => {
+  const onInput = () => {
     if (tool.sync === false) return;
     clearTimeout(textDebounce);
     textDebounce = setTimeout(runNow, 200);
-  });
+  };
+  if (inJar) inJar.onUpdate(onInput);
+  else $("#txtIn").addEventListener("input", onInput);
+
   $$(".text-options input, .text-options .dd").forEach(el => {
     el.addEventListener(el.tagName === "INPUT" ? "input" : "click", () => {
       if (tool.sync === false) return;
@@ -869,20 +879,27 @@ function renderText(toolId) {
   });
   $("#txtRun")?.addEventListener("click", runNow);
   $("#txtSwap").addEventListener("click", () => {
-    $("#txtIn").value = $("#txtOut").value;
+    const v = getTxtOut();
+    setTxtIn(v);
     runNow();
   });
   $("#txtCopy").addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText($("#txtOut").value); toast("Copied"); }
+    try { await navigator.clipboard.writeText(getTxtOut()); toast("Copied"); }
     catch { toast("Copy failed"); }
   });
   $("#txtClear").addEventListener("click", () => {
-    $("#txtIn").value = ""; $("#txtOut").value = "";
+    setTxtIn(""); setTxtOut("");
     $("#txtErr").hidden = true;
   });
 
   if (tool.sync !== false) runText();
 }
+
+let currentTextIn = null, currentTextOut = null;
+function getTxtIn()  { return currentTextIn  ? currentTextIn.toString()  : ($("#txtIn")?.textContent || ""); }
+function getTxtOut() { return currentTextOut ? currentTextOut.toString() : ($("#txtOut")?.textContent || ""); }
+function setTxtIn(v)  { if (currentTextIn)  currentTextIn.updateCode(v);  else if ($("#txtIn"))  $("#txtIn").textContent  = v; }
+function setTxtOut(v) { if (currentTextOut) currentTextOut.updateCode(v); else if ($("#txtOut")) $("#txtOut").textContent = v; }
 
 function renderOpt(o) {
   if (o.type === "select") {
@@ -928,12 +945,12 @@ function readOpts() {
 async function runText() {
   const tool = currentTextTool;
   if (!tool) return;
-  const input = $("#txtIn").value;
+  const input = getTxtIn();
   const err = $("#txtErr");
   err.hidden = true;
   try {
     const out = await tool.run(input, readOpts());
-    $("#txtOut").value = out ?? "";
+    setTxtOut(out ?? "");
   } catch (e) {
     err.textContent = "Error: " + (e.message || e);
     err.hidden = false;

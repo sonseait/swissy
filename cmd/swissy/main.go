@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"swissy/internal/config"
 	"swissy/internal/httpapi"
@@ -26,6 +27,7 @@ func main() {
 	}
 
 	h := hub.New()
+	wh := hub.NewWebhookHub()
 
 	smtpServer := &smtpsrv.Server{
 		Addr:   config.Env("SMTP_ADDR", ":25"),
@@ -36,7 +38,18 @@ func main() {
 	}
 	go smtpServer.ListenAndServe()
 
-	api := &httpapi.Server{Store: st, Hub: h, S3: s3c}
+	// Periodically purge expired pastes.
+	go func() {
+		t := time.NewTicker(10 * time.Minute)
+		defer t.Stop()
+		for range t.C {
+			if err := st.DeleteExpiredPastes(); err != nil {
+				log.Printf("paste gc: %v", err)
+			}
+		}
+	}()
+
+	api := &httpapi.Server{Store: st, Hub: h, WebhookHub: wh, S3: s3c}
 	httpAddr := config.Env("HTTP_ADDR", ":8080")
 	log.Printf("http listening on %s", httpAddr)
 	log.Fatal(http.ListenAndServe(httpAddr, api.Handler()))

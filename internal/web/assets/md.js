@@ -46,35 +46,43 @@ function renderMarkdown() {
     </div>
   `;
 
+  $("#main").classList.add("no-scroll");
   $("#main").innerHTML = `
-    <h1>Markdown</h1>
     <div class="md-workspace">
-      <textarea id="mdInput" class="text-area mono" spellcheck="false" placeholder="# Hello"></textarea>
+      <div id="mdInput" class="code-editor" data-placeholder="# Hello"></div>
       <div id="mdPreview" class="md-preview"></div>
     </div>
   `;
 
   const input = $("#mdInput");
-  input.value = localStorage.getItem(MD_STORAGE) || "";
+  const initial = localStorage.getItem(MD_STORAGE) || "";
+  input.textContent = initial;
+  const jar = attachCodeEditor(input, "markdown");
   const wrapCb = $("#mdWrap");
   wrapCb.checked = localStorage.getItem(MD_STORAGE + ".wrap") !== "0";
   applyWrap();
 
   const update = () => {
-    localStorage.setItem(MD_STORAGE, input.value);
-    $("#mdPreview").innerHTML = window.marked ? marked.parse(input.value) : "";
+    const val = input.textContent;
+    localStorage.setItem(MD_STORAGE, val);
+    $("#mdPreview").innerHTML = window.marked ? marked.parse(val) : "";
   };
   let t = null;
-  input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(update, 120); });
+  const onInput = () => { clearTimeout(t); t = setTimeout(update, 120); };
+  if (jar) jar.onUpdate(onInput);
+  else input.addEventListener("input", onInput);
   wrapCb.addEventListener("change", () => {
     localStorage.setItem(MD_STORAGE + ".wrap", wrapCb.checked ? "1" : "0");
     applyWrap();
   });
 
-  $("#mdSample").addEventListener("click", () => {
-    input.value = MD_SAMPLE; update();
-  });
-  $("#mdClear").addEventListener("click", () => { input.value = ""; update(); });
+  const setVal = (v) => {
+    if (jar) jar.updateCode(v);
+    else input.textContent = v;
+    update();
+  };
+  $("#mdSample").addEventListener("click", () => setVal(MD_SAMPLE));
+  $("#mdClear").addEventListener("click", () => setVal(""));
   $("#mdPrint").addEventListener("click", printMarkdown);
 
   update();

@@ -45,10 +45,39 @@ function parseHash() {
   return { route: route || "totps", rest: cleaned };
 }
 
+// ---------- CodeJar editor helper ----------
+// Attach a syntax-highlighted editor to a <div> (editable). Returns the jar
+// instance with .updateCode(str), .toString(), .destroy(), plus a `.language`
+// setter that re-highlights with the given hljs language.
+function attachCodeEditor(el, language = "plain") {
+  if (!window.CodeJar || !window.hljs) return null;
+  el.classList.add("hljs", "code-editor");
+  let lang = language;
+  const highlight = editor => {
+    const code = editor.textContent;
+    if (lang && lang !== "plain" && hljs.getLanguage(lang)) {
+      editor.innerHTML = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+    } else {
+      editor.innerHTML = hljs.highlightAuto(code).value;
+    }
+  };
+  const jar = window.CodeJar(el, highlight, { tab: "  ", indentOn: /[(\[{]$/ });
+  jar.setLanguage = l => { lang = l || "plain"; highlight(el); };
+  return jar;
+}
+
+const ROUTE_LABELS = {
+  totps: "TOTPs", mails: "Mails", logins: "Logins",
+  text: "Text tools", time: "Time", image: "Image", md: "Markdown",
+  qr: "QR codes", pastes: "Pastes", webhooks: "Webhooks",
+};
+
 async function render() {
   const { route, rest } = parseHash();
   $$(".sidebar nav a").forEach(a =>
     a.classList.toggle("active", a.dataset.route === route));
+  const crumb = $("#crumbLabel");
+  if (crumb) crumb.textContent = ROUTE_LABELS[route] || "Dashboard";
   $("#main").classList.remove("no-scroll");
   try {
     if (route === "totps") await renderTOTPs();
@@ -58,6 +87,9 @@ async function render() {
     else if (route === "time") await renderTime();
     else if (route === "image") await renderImage();
     else if (route === "md") await renderMarkdown();
+    else if (route === "qr") await renderQR();
+    else if (route === "pastes") await renderPastes(rest[0] || "");
+    else if (route === "webhooks") await renderWebhooks(rest[0] || "");
     else { location.hash = "#/totps"; }
   } catch (err) {
     console.error("render failed:", err);
@@ -69,31 +101,12 @@ window.addEventListener("hashchange", render);
 // ==================== TOTPs ====================
 let totpEntries = [];
 let totpTimer = null;
+let totpLastStep = null;
 
 async function renderTOTPs() {
   if (totpMailStream) { totpMailStream.close(); totpMailStream = null; }
   $("#sidebarContent").innerHTML = "";
-  $("#main").innerHTML = `
-    <h1>TOTPs</h1>
-    <form class="row" id="totpForm">
-      <input name="name" placeholder="Name (optional)" autocomplete="off" />
-      <input name="secret" placeholder="Secret or otpauth://..." autocomplete="off" required />
-      <button class="primary" type="submit">Add</button>
-    </form>
-    <div id="totpGrid" class="grid"></div>
-  `;
-  $("#totpForm").addEventListener("submit", async e => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      totpEntries = await api("/api/totps", {
-        method: "POST",
-        body: JSON.stringify({ name: fd.get("name"), secret: fd.get("secret") }),
-      });
-      e.target.reset();
-      renderTOTPGrid();
-    } catch (err) { toast(err.message); }
-  });
+  $("#main").innerHTML = `<div id="totpGrid" class="grid"></div>`;
   $("#totpGrid").addEventListener("click", async e => {
     const card = e.target.closest(".card");
     if (!card) return;
@@ -110,9 +123,9 @@ async function renderTOTPs() {
     } catch { toast("Copy failed"); }
   });
   totpEntries = await api("/api/totps");
-  renderTOTPGrid();
+  await renderTOTPGrid();
   clearInterval(totpTimer);
-  totpTimer = setInterval(renderTOTPGrid, 1000);
+  totpTimer = setInterval(tickTOTPGrid, 1000);
 }
 
 async function renderTOTPGrid() {
@@ -123,7 +136,8 @@ async function renderTOTPGrid() {
     return;
   }
   const now = Date.now();
-  const secLeft = 30 - Math.floor(now / 1000) % 30;
+  const step = totpStep(now);
+  const secLeft = totpSecondsLeft(now);
   const pct = (secLeft / 30) * 100;
   const cards = await Promise.all(totpEntries.map(async e => {
     let code = "------";
@@ -135,12 +149,76 @@ async function renderTOTPGrid() {
       <div class="code">${display}</div>
       <div class="foot">
         <span>${fmtDate(e.created_at)}</span>
-        <span>${secLeft}s</span>
+        <span class="sec-left">${secLeft}s</span>
       </div>
       <div class="progress"><div class="bar ${secLeft<=5?'low':''}" style="width:${pct}%"></div></div>
     </div>`;
   }));
   grid.innerHTML = cards.join("");
+  totpLastStep = step;
+}
+
+async function tickTOTPGrid() {
+  const grid = $("#totpGrid");
+  if (!grid) { clearInterval(totpTimer); return; }
+  const cardsEl = grid.querySelectorAll(".card");
+  if (!cardsEl.length) return;
+  const now = Date.now();
+  const step = totpStep(now);
+  const secLeft = totpSecondsLeft(now);
+  const pct = (secLeft / 30) * 100;
+  const low = secLeft <= 5;
+  const refreshCodes = step !== totpLastStep;
+  for (const card of cardsEl) {
+    const id = card.dataset.id;
+    const entry = totpEntries.find(x => String(x.id) === String(id));
+    if (!entry) continue;
+    if (refreshCodes || card.dataset.code === "------") {
+      let code = "------";
+      try { code = await totp(entry.secret, now); } catch {}
+      card.dataset.code = code;
+      const codeEl = card.querySelector(".code");
+      if (codeEl) codeEl.textContent = code.slice(0,3) + " " + code.slice(3);
+    }
+    const secEl = card.querySelector(".sec-left");
+    if (secEl) secEl.textContent = secLeft + "s";
+    const bar = card.querySelector(".progress .bar");
+    if (bar) {
+      bar.style.width = pct + "%";
+      bar.classList.toggle("low", low);
+    }
+  }
+  totpLastStep = step;
+}
+
+function openCreateTOTPModal() {
+  openModal(`
+    <h2>Add TOTP</h2>
+    <div class="field">
+      <label>Name</label>
+      <input id="tName" placeholder="(optional, e.g. GitHub)" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>Secret or otpauth:// URI</label>
+      <input id="tSecret" placeholder="JBSWY3DPEHPK3PXP or otpauth://..." autocomplete="off" required />
+    </div>
+    <div class="actions">
+      <button class="ghost" id="tCancel">Cancel</button>
+      <button class="primary" id="tSave">Add</button>
+    </div>
+  `);
+  $("#tCancel").onclick = closeModal;
+  $("#tSave").onclick = async () => {
+    const body = { name: $("#tName").value.trim(), secret: $("#tSecret").value.trim() };
+    if (!body.secret) { toast("Secret required"); return; }
+    try {
+      totpEntries = await api("/api/totps", { method: "POST", body: JSON.stringify(body) });
+      closeModal();
+      await renderTOTPGrid();
+      toast("TOTP added");
+    } catch (err) { toast(err.message); }
+  };
+  setTimeout(() => $("#tSecret").focus(), 40);
 }
 
 // ==================== IndexedDB (recent mailboxes) ====================
@@ -247,7 +325,7 @@ async function renderMails(idOrAddr) {
     [domains, recents] = await Promise.all([api("/api/domains"), recentAll()]);
   } catch (err) {
     console.error("renderMails load failed:", err);
-    $("#main").innerHTML = `<h1>Mails</h1><div class="text-error">Load failed: ${esc(err.message)}</div>`;
+    $("#main").innerHTML = `<div class="text-error">Load failed: ${esc(err.message)}</div>`;
     return;
   }
   let addr = "";
@@ -321,6 +399,7 @@ function renderMailHeader(domains, addr) {
     local = p[0] || ""; domain = p[1] || domain;
   }
 
+  $("#main").classList.add("no-scroll");
   $("#main").innerHTML = `
     <div class="mail-topbar">
       <form id="openForm" class="open-row">
@@ -341,7 +420,10 @@ function renderMailHeader(domains, addr) {
         <button class="ghost" type="button" id="randomBtn" title="Random mailbox">🎲 Random</button>
         <span class="status" id="sseStatus" title="stream status"></span>
       </form>
-      ${addr ? `<div class="url-email">Mailbox: <b>${esc(addr)}</b></div>` : ""}
+      ${addr ? `<div class="url-email">
+        Mailbox: <b>${esc(addr)}</b>
+        <button class="login-copy" id="copyMailbox" data-addr="${esc(addr)}" title="Copy email">📋</button>
+      </div>` : ""}
     </div>
     <div id="mailBody"></div>
   `;
@@ -349,6 +431,29 @@ function renderMailHeader(domains, addr) {
   bindDropdown($("#ddDomain"), val => {
     if (val === "__add__") { openAddDomainModal(); return false; }
     return true;
+  });
+
+  const copyBtn = $("#copyMailbox");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(copyBtn.dataset.addr);
+        toast("Copied " + copyBtn.dataset.addr);
+      } catch { toast("Copy failed"); }
+    });
+  }
+
+  const openLocal = $("#openLocal");
+  const ddDomain = $("#ddDomain");
+  openLocal.addEventListener("paste", e => {
+    const text = e.clipboardData?.getData("text/plain") || "";
+    const parsed = parseMailboxAddress(text);
+    if (!parsed) return;
+    e.preventDefault();
+    openLocal.value = parsed.local;
+    if (!setDropdownValue(ddDomain, parsed.domain)) {
+      toast("Domain not found: " + parsed.domain);
+    }
   });
 
   $("#randomBtn").addEventListener("click", async () => {
@@ -366,8 +471,8 @@ function renderMailHeader(domains, addr) {
 
   $("#openForm").addEventListener("submit", async e => {
     e.preventDefault();
-    const l = $("#openLocal").value.trim().toLowerCase();
-    const d = $("#ddDomain").dataset.value;
+    const l = openLocal.value.trim().toLowerCase();
+    const d = ddDomain.dataset.value;
     if (!l || !d || d === "__add__") { toast("Enter email & domain"); return; }
     try {
       const res = await api("/api/mailboxes", { method: "POST", body: JSON.stringify({ local: l, domain: d }) });
@@ -380,6 +485,20 @@ function renderMailHeader(domains, addr) {
 }
 
 // ---------- Custom dropdown ----------
+function setDropdownValue(root, value) {
+  if (!root || !value) return false;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return false;
+  const items = [...root.querySelectorAll(".dd-item")];
+  const match = items.find(item => item.dataset.value.toLowerCase() === normalized);
+  if (!match) return false;
+  const label = root.querySelector(".dd-label");
+  root.dataset.value = match.dataset.value;
+  if (label) label.textContent = match.textContent;
+  items.forEach(item => item.classList.toggle("active", item === match));
+  return true;
+}
+
 function bindDropdown(root, onPick) {
   const toggle = root.querySelector(".dd-toggle");
   const menu = root.querySelector(".dd-menu");
@@ -452,6 +571,17 @@ function bindDropdown(root, onPick) {
     if (menu.hidden) return;
     if (!root.contains(e.target) && !menu.contains(e.target)) close();
   });
+}
+
+function parseMailboxAddress(raw) {
+  const text = String(raw || "").trim();
+  if (!text.includes("@")) return null;
+  const match = text.match(/<?\s*([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})\s*>?/i);
+  if (!match) return null;
+  return {
+    local: match[1].toLowerCase(),
+    domain: match[2].toLowerCase(),
+  };
 }
 
 let currentMails = [];
@@ -546,29 +676,16 @@ async function showMailDetail(m) {
 function wrapEmailHtml(html) {
   return `<!doctype html><html><head><meta charset="utf-8" />
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   html, body {
-    background: #0b1614; color: #e6f1ef;
+    background: #ffffff; color: #111;
     font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
     font-size: 14px; line-height: 1.6;
-    margin: 0; padding: 14px 18px;
+    margin: 0; padding: 16px 20px;
   }
-  a { color: #10b981; }
-  blockquote {
-    border-left: 3px solid rgba(255,255,255,.15) !important;
-    color: #9fb3b0; margin: 8px 0 8px 4px !important; padding-left: 12px !important;
-  }
-  pre, code {
-    background: #050a0c; color: #e6f1ef;
-    padding: 2px 6px; border-radius: 4px;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-  }
-  pre { padding: 10px 12px; overflow: auto; }
+  a { color: #1c7f74; }
   img { max-width: 100%; height: auto; }
   table { border-collapse: collapse; max-width: 100%; }
-  hr { border: 0; border-top: 1px solid rgba(255,255,255,.1); }
-  /* Neutralize common light backgrounds from marketing mail */
-  [bgcolor="#ffffff"], [bgcolor="#FFFFFF"], [bgcolor="white"] { background: transparent !important; }
 </style>
 </head><body>${html}</body></html>`;
 }
@@ -788,6 +905,56 @@ async function openMailDetail(id, subject, sender) {
 }
 window.closeModal = closeModal;
 
+// ---------- Topbar: Cmd+K focus search, quick add per-route ----------
+(function initTopbar() {
+  const search = $("#globalSearch");
+  if (search) {
+    document.addEventListener("keydown", e => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        search.focus();
+        search.select();
+      }
+      if (e.key === "Escape" && document.activeElement === search) search.blur();
+    });
+    search.addEventListener("keydown", e => {
+      if (e.key !== "Enter") return;
+      const q = search.value.trim().toLowerCase();
+      if (!q) return;
+      const match = Object.entries(ROUTE_LABELS).find(
+        ([k, v]) => k.startsWith(q) || v.toLowerCase().includes(q)
+      );
+      if (match) { location.hash = "#/" + match[0]; search.value = ""; search.blur(); }
+    });
+  }
+  const add = $("#quickAdd");
+  if (add) {
+    add.addEventListener("click", () => {
+      const { route } = parseHash();
+      if (route === "logins" && typeof openAddLoginModal === "function") openAddLoginModal();
+      else if (route === "mails") { const f = $("#openLocal"); f && f.focus(); }
+      else if (route === "totps") { typeof openCreateTOTPModal === "function" && openCreateTOTPModal(); }
+      else if (route === "pastes") { typeof openCreatePasteModal === "function" && openCreatePasteModal(); }
+      else if (route === "webhooks") { typeof openCreateWebhookModal === "function" && openCreateWebhookModal(); }
+      else if (route === "qr") { $("#qrText")?.focus(); }
+      else toast("Quick add not available here");
+    });
+  }
+})();
+
 // ---------- Init ----------
+async function syncAuthCodesOnWake() {
+  if (document.hidden) return;
+  const { route } = parseHash();
+  if (route === "totps") await tickTOTPGrid();
+  if (route === "logins" && typeof tickLoginOtps === "function") await tickLoginOtps();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void syncAuthCodesOnWake();
+});
+window.addEventListener("focus", () => { void syncAuthCodesOnWake(); });
+window.addEventListener("pageshow", () => { void syncAuthCodesOnWake(); });
+
 if (!location.hash) location.hash = "#/totps";
 render();

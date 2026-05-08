@@ -12,9 +12,10 @@ import (
 )
 
 type Server struct {
-	Store *store.Store
-	Hub   *hub.Hub
-	S3    *s3.Client
+	Store       *store.Store
+	Hub         *hub.Hub
+	WebhookHub  *hub.WebhookHub
+	S3          *s3.Client
 }
 
 // Handler builds the http.Handler serving both the embedded UI and the JSON API.
@@ -34,6 +35,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/mailboxes/", s.handleMailboxesPath)
 	mux.HandleFunc("/api/mail/stream", s.handleMailStream)
 	mux.HandleFunc("/api/mail/", s.handleMailContent)
+
+	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
+	mux.HandleFunc("/api/webhooks/", s.handleWebhooksPath)
+	mux.HandleFunc("/hook/", s.handleHookInbound)
+
+	mux.HandleFunc("/api/pastes", s.handlePastes)
+	mux.HandleFunc("/api/pastes/", s.handlePastesPath)
+	mux.HandleFunc("/p/", s.handlePasteRaw)
+
+	mux.HandleFunc("/api/qr", s.handleQR)
 
 	return mux
 }

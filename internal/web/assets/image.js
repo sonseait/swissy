@@ -3,12 +3,14 @@
 const imgState = {
   img: null,
   file: null,
-  crop: null,
-  dragging: null,
+  crop: null,          // { x, y, w, h } in natural px
   targetW: null,
   targetH: null,
   aspectLock: false,
-  cropRatio: null, // null = free, or number w/h
+  cropRatio: null,     // null = free
+  scale: 1,            // display px / natural px
+  drag: null,          // { mode, handle, startPt, startCrop }
+  rafPending: false,
 };
 
 const CROP_PRESETS = [
@@ -32,13 +34,10 @@ function renderImage() {
 
   $("#sidebarContent").innerHTML = `
     <div class="sidebar-header">Image</div>
-    <div style="padding:8px 12px;color:var(--dim);font-size:12px">
-      Drop a file or click Choose file.
-    </div>
+    <div style="padding:8px 12px;color:var(--dim);font-size:12px">Drop a file or pick one.</div>
   `;
 
   $("#main").innerHTML = `
-    <h1>Image</h1>
     <div class="mail-topbar img-topbar">
       <div class="open-row">
         <label>File:</label>
@@ -54,8 +53,20 @@ function renderImage() {
     </div>
 
     <div class="img-workspace">
-      <div class="img-canvas-wrap">
+      <div class="img-canvas-wrap" id="imgWrap">
         <canvas id="imgCanvas"></canvas>
+        <div id="cropBox" class="crop-box" hidden>
+          <div class="crop-thirds"></div>
+          <div class="crop-size" id="cropSize"></div>
+          <div class="crop-handle h-nw" data-h="nw"></div>
+          <div class="crop-handle h-n"  data-h="n"></div>
+          <div class="crop-handle h-ne" data-h="ne"></div>
+          <div class="crop-handle h-e"  data-h="e"></div>
+          <div class="crop-handle h-se" data-h="se"></div>
+          <div class="crop-handle h-s"  data-h="s"></div>
+          <div class="crop-handle h-sw" data-h="sw"></div>
+          <div class="crop-handle h-w"  data-h="w"></div>
+        </div>
         <div id="imgDrop" class="img-drop">Drop an image here</div>
       </div>
       <aside class="img-panel">
@@ -118,11 +129,10 @@ function renderImage() {
     const preset = CROP_PRESETS.find(p => p[0] === b.dataset.k);
     imgState.cropRatio = preset ? preset[2] : null;
     if (imgState.cropRatio && imgState.img) applyRatioToCrop();
-    drawCanvas();
+    scheduleDraw();
   });
 
-  const drop = $("#imgDrop");
-  const wrap = $(".img-canvas-wrap");
+  const wrap = $("#imgWrap");
   ["dragenter", "dragover"].forEach(ev => wrap.addEventListener(ev, e => {
     e.preventDefault(); wrap.classList.add("drop-active");
   }));
@@ -134,11 +144,13 @@ function renderImage() {
     if (f) loadImage(f);
   });
 
-  $("#imgReset").addEventListener("click", () => { imgState.crop = null; drawCanvas(); });
+  $("#imgReset").addEventListener("click", () => {
+    imgState.crop = null; scheduleDraw();
+  });
 
   $("#imgW").addEventListener("input", e => {
     imgState.targetW = parseInt(e.target.value, 10) || null;
-    if (imgState.aspectLock && imgState.img) {
+    if (imgState.aspectLock && imgState.img && imgState.targetW) {
       const cr = getCropRect();
       imgState.targetH = Math.round(imgState.targetW * cr.h / cr.w);
       $("#imgH").value = imgState.targetH;
@@ -146,7 +158,7 @@ function renderImage() {
   });
   $("#imgH").addEventListener("input", e => {
     imgState.targetH = parseInt(e.target.value, 10) || null;
-    if (imgState.aspectLock && imgState.img) {
+    if (imgState.aspectLock && imgState.img && imgState.targetH) {
       const cr = getCropRect();
       imgState.targetW = Math.round(imgState.targetH * cr.w / cr.h);
       $("#imgW").value = imgState.targetW;
@@ -163,10 +175,10 @@ function renderImage() {
     $("#imgH").value = imgState.targetH;
   }));
   $("#imgQual").addEventListener("input", e => $("#imgQualVal").textContent = e.target.value);
-
   $("#imgDownload").addEventListener("click", exportImage);
 
   bindCropInteractions();
+  window.addEventListener("resize", scheduleDraw);
 }
 
 function loadImage(file) {
@@ -185,7 +197,7 @@ function loadImage(file) {
     $("#imgFileName").textContent = file.name;
     $("#imgDrop").style.display = "none";
     if (imgState.cropRatio) applyRatioToCrop();
-    drawCanvas();
+    scheduleDraw();
   };
   img.src = URL.createObjectURL(file);
 }
@@ -205,114 +217,212 @@ function applyRatioToCrop() {
   if (hEl) hEl.value = h;
 }
 
-function constrainToRatio(rect, ratio, img) {
-  if (!ratio) return rect;
-  let { x, y, w, h } = rect;
-  if (w / h > ratio) w = h * ratio; else h = w / ratio;
-  w = Math.min(w, img.naturalWidth - x);
-  h = Math.min(h, img.naturalHeight - y);
-  if (w / h > ratio) w = h * ratio; else h = w / ratio;
-  return { x, y, w: Math.round(w), h: Math.round(h) };
-}
-
 function getCropRect() {
   if (imgState.crop) return imgState.crop;
   const img = imgState.img;
   return { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
 }
 
+// Clamp + round a rect to image bounds.
+function clampCrop(rect, img) {
+  let { x, y, w, h } = rect;
+  w = Math.max(1, w); h = Math.max(1, h);
+  x = Math.max(0, Math.min(x, img.naturalWidth - w));
+  y = Math.max(0, Math.min(y, img.naturalHeight - h));
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+}
+
+function scheduleDraw() {
+  if (imgState.rafPending) return;
+  imgState.rafPending = true;
+  requestAnimationFrame(() => {
+    imgState.rafPending = false;
+    drawCanvas();
+  });
+}
+
 function drawCanvas() {
   const c = $("#imgCanvas");
-  const wrap = $(".img-canvas-wrap");
+  const wrap = $("#imgWrap");
   if (!c || !wrap) return;
   const img = imgState.img;
-  if (!img) { c.width = c.height = 0; return; }
-  const maxW = wrap.clientWidth - 20;
-  const maxH = wrap.clientHeight - 20;
+  if (!img) { c.width = c.height = 0; updateCropBox(); return; }
+  const maxW = wrap.clientWidth - 24;
+  const maxH = wrap.clientHeight - 24;
   const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
   const dispW = Math.max(1, Math.round(img.naturalWidth * scale));
   const dispH = Math.max(1, Math.round(img.naturalHeight * scale));
   c.width = dispW; c.height = dispH;
-  c.dataset.scale = scale;
+  imgState.scale = scale;
   const ctx = c.getContext("2d");
   ctx.clearRect(0, 0, dispW, dispH);
   ctx.drawImage(img, 0, 0, dispW, dispH);
+  updateCropBox();
+}
 
-  // overlay crop
+// Position the DOM crop box over the canvas using natural→display scale.
+function updateCropBox() {
+  const box = $("#cropBox");
+  const c = $("#imgCanvas");
+  const wrap = $("#imgWrap");
+  if (!box || !c || !wrap) return;
   const cr = imgState.crop;
-  if (cr) {
-    const x = cr.x * scale, y = cr.y * scale, w = cr.w * scale, h = cr.h * scale;
-    ctx.fillStyle = "rgba(0,0,0,.55)";
-    ctx.fillRect(0, 0, dispW, y);
-    ctx.fillRect(0, y + h, dispW, dispH - y - h);
-    ctx.fillRect(0, y, x, h);
-    ctx.fillRect(x + w, y, dispW - x - w, h);
-    ctx.strokeStyle = "#6c8cff"; ctx.lineWidth = 1.5;
-    ctx.strokeRect(x + 0.5, y + 0.5, w, h);
-    // handles
-    ctx.fillStyle = "#6c8cff";
-    const hs = 6;
-    const pts = [[x,y],[x+w,y],[x,y+h],[x+w,y+h],[x+w/2,y],[x+w/2,y+h],[x,y+h/2],[x+w,y+h/2]];
-    for (const [px, py] of pts) ctx.fillRect(px - hs/2, py - hs/2, hs, hs);
-  }
+  if (!cr || !imgState.img) { box.hidden = true; return; }
+  const canvasRect = c.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  const offsetX = canvasRect.left - wrapRect.left;
+  const offsetY = canvasRect.top - wrapRect.top;
+  const s = imgState.scale;
+  box.hidden = false;
+  box.style.left = (offsetX + cr.x * s) + "px";
+  box.style.top = (offsetY + cr.y * s) + "px";
+  box.style.width = (cr.w * s) + "px";
+  box.style.height = (cr.h * s) + "px";
+  const sz = $("#cropSize");
+  if (sz) sz.textContent = `${Math.round(cr.w)} × ${Math.round(cr.h)}`;
 }
 
 function bindCropInteractions() {
   const c = $("#imgCanvas");
-  const getPos = (ev) => {
+  const box = $("#cropBox");
+
+  const getNaturalPt = (ev) => {
     const r = c.getBoundingClientRect();
-    const scale = parseFloat(c.dataset.scale || "1");
-    return { x: (ev.clientX - r.left) / scale, y: (ev.clientY - r.top) / scale };
+    const s = imgState.scale || 1;
+    return {
+      x: (ev.clientX - r.left) / s,
+      y: (ev.clientY - r.top) / s,
+    };
   };
-  c.addEventListener("mousedown", ev => {
+
+  const startDrag = (ev, mode, handle) => {
     if (!imgState.img) return;
-    const p = getPos(ev);
+    ev.preventDefault();
+    try { ev.target.setPointerCapture(ev.pointerId); } catch {}
+    const pt = getNaturalPt(ev);
+    imgState.drag = {
+      mode, handle,
+      startPt: pt,
+      startCrop: imgState.crop ? { ...imgState.crop } : null,
+    };
+    if (mode === "create") {
+      imgState.crop = { x: pt.x, y: pt.y, w: 1, h: 1 };
+      scheduleDraw();
+    }
+  };
+
+  // Pointer on canvas → create new crop (or move if click inside existing).
+  c.addEventListener("pointerdown", ev => {
+    if (!imgState.img) return;
+    const pt = getNaturalPt(ev);
     const cr = imgState.crop;
-    let mode = "new";
-    if (cr) {
-      const inside = p.x >= cr.x && p.x <= cr.x + cr.w && p.y >= cr.y && p.y <= cr.y + cr.h;
-      mode = inside ? "move" : "new";
+    if (cr && pt.x >= cr.x && pt.x <= cr.x + cr.w && pt.y >= cr.y && pt.y <= cr.y + cr.h) {
+      startDrag(ev, "move");
+    } else {
+      startDrag(ev, "create");
     }
-    imgState.dragging = { mode, start: p, orig: cr ? { ...cr } : { x: p.x, y: p.y, w: 0, h: 0 } };
-    if (mode === "new") imgState.crop = { x: p.x, y: p.y, w: 0, h: 0 };
-    drawCanvas();
   });
-  window.addEventListener("mousemove", ev => {
-    if (!imgState.dragging || !$("#imgCanvas")) return;
-    const p = getPos(ev);
-    const d = imgState.dragging;
+
+  // Pointer on the box body = move.
+  box.addEventListener("pointerdown", ev => {
+    if (ev.target.classList.contains("crop-handle")) return;
+    startDrag(ev, "move");
+  });
+
+  // Pointer on handles = resize.
+  for (const h of box.querySelectorAll(".crop-handle")) {
+    h.addEventListener("pointerdown", ev => {
+      ev.stopPropagation();
+      startDrag(ev, "resize", h.dataset.h);
+    });
+  }
+
+  const onMove = (ev) => {
+    const d = imgState.drag;
+    if (!d) return;
+    const pt = getNaturalPt(ev);
     const img = imgState.img;
-    if (d.mode === "new") {
-      const x = Math.max(0, Math.min(d.start.x, p.x));
-      const y = Math.max(0, Math.min(d.start.y, p.y));
-      let w = Math.min(Math.abs(p.x - d.start.x), img.naturalWidth - x);
-      let h = Math.min(Math.abs(p.y - d.start.y), img.naturalHeight - y);
-      imgState.crop = imgState.cropRatio
-        ? constrainToRatio({ x, y, w, h }, imgState.cropRatio, img)
-        : { x, y, w, h };
-    } else if (d.mode === "move") {
-      const dx = p.x - d.start.x, dy = p.y - d.start.y;
-      imgState.crop = {
-        x: Math.max(0, Math.min(img.naturalWidth - d.orig.w, d.orig.x + dx)),
-        y: Math.max(0, Math.min(img.naturalHeight - d.orig.h, d.orig.y + dy)),
-        w: d.orig.w, h: d.orig.h,
-      };
-    }
-    drawCanvas();
-  });
-  window.addEventListener("mouseup", () => {
-    if (imgState.dragging) {
-      if (imgState.crop && (imgState.crop.w < 4 || imgState.crop.h < 4)) imgState.crop = null;
-      if (imgState.crop) {
-        imgState.targetW = Math.round(imgState.crop.w);
-        imgState.targetH = Math.round(imgState.crop.h);
-        $("#imgW").value = imgState.targetW;
-        $("#imgH").value = imgState.targetH;
+    const ratio = imgState.cropRatio;
+
+    if (d.mode === "create") {
+      let x = Math.min(d.startPt.x, pt.x);
+      let y = Math.min(d.startPt.y, pt.y);
+      let w = Math.abs(pt.x - d.startPt.x);
+      let h = Math.abs(pt.y - d.startPt.y);
+      if (ratio) {
+        if (w / h > ratio) w = h * ratio; else h = w / ratio;
       }
+      imgState.crop = clampCrop({ x, y, w, h }, img);
+    } else if (d.mode === "move") {
+      const dx = pt.x - d.startPt.x;
+      const dy = pt.y - d.startPt.y;
+      imgState.crop = clampCrop({
+        x: d.startCrop.x + dx,
+        y: d.startCrop.y + dy,
+        w: d.startCrop.w,
+        h: d.startCrop.h,
+      }, img);
+    } else if (d.mode === "resize") {
+      imgState.crop = resizeCrop(d.startCrop, d.handle, pt, ratio, img);
     }
-    imgState.dragging = null;
-    drawCanvas();
-  });
+    syncTargetInputs();
+    scheduleDraw();
+  };
+
+  const onUp = (ev) => {
+    if (!imgState.drag) return;
+    try { ev.target.releasePointerCapture(ev.pointerId); } catch {}
+    // Discard tiny crop.
+    if (imgState.crop && (imgState.crop.w < 4 || imgState.crop.h < 4)) imgState.crop = null;
+    imgState.drag = null;
+    syncTargetInputs();
+    scheduleDraw();
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+}
+
+function syncTargetInputs() {
+  if (!imgState.crop) return;
+  imgState.targetW = Math.round(imgState.crop.w);
+  imgState.targetH = Math.round(imgState.crop.h);
+  const wEl = $("#imgW"), hEl = $("#imgH");
+  if (wEl) wEl.value = imgState.targetW;
+  if (hEl) hEl.value = imgState.targetH;
+}
+
+// Resize by dragging a handle; optionally lock aspect ratio.
+function resizeCrop(start, handle, pt, ratio, img) {
+  let { x, y, w, h } = start;
+  const right = x + w, bottom = y + h;
+  let nx = x, ny = y, nw = w, nh = h;
+  if (handle.includes("e")) nw = Math.max(1, pt.x - x);
+  if (handle.includes("w")) { nx = Math.min(pt.x, right - 1); nw = right - nx; }
+  if (handle.includes("s")) nh = Math.max(1, pt.y - y);
+  if (handle.includes("n")) { ny = Math.min(pt.y, bottom - 1); nh = bottom - ny; }
+  if (ratio) {
+    // Which dimension drives depends on handle.
+    const cornersWE = handle === "e" || handle === "w";
+    const cornersNS = handle === "n" || handle === "s";
+    if (cornersWE) {
+      nh = nw / ratio;
+      if (handle === "e") ny = y + (h - nh) / 2;
+      else ny = y + (h - nh) / 2;
+    } else if (cornersNS) {
+      nw = nh * ratio;
+      if (handle === "n") nx = x + (w - nw) / 2;
+      else nx = x + (w - nw) / 2;
+    } else {
+      // corner: keep both edges that are being dragged.
+      if (nw / nh > ratio) nw = nh * ratio; else nh = nw / ratio;
+      if (handle === "nw") { nx = right - nw; ny = bottom - nh; }
+      else if (handle === "ne") { ny = bottom - nh; }
+      else if (handle === "sw") { nx = right - nw; }
+    }
+  }
+  return clampCrop({ x: nx, y: ny, w: nw, h: nh }, img);
 }
 
 async function exportImage() {

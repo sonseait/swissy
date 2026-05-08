@@ -117,7 +117,6 @@ async function renderTime() {
 
   const now = new Date();
   $("#main").innerHTML = `
-    <h1>Time</h1>
     <div class="mail-topbar">
       <div class="open-row">
         <label>Source:</label>

@@ -11,13 +11,8 @@ async function renderLogins() {
 
   $("#sidebarContent").innerHTML = "";
   $("#main").innerHTML = `
-    <h1>Logins</h1>
-    <form class="row" id="loginHeader">
-      <button type="button" class="primary" id="addLoginBtn">+ Add login</button>
-    </form>
     <div id="loginGrid" class="grid"></div>
   `;
-  $("#addLoginBtn").addEventListener("click", openAddLoginModal);
 
   $("#loginGrid").addEventListener("click", async e => {
     const card = e.target.closest(".login-card");
@@ -37,7 +32,7 @@ async function renderLogins() {
     if (copyBtn) {
       const text = copyBtn.dataset.value;
       const label = copyBtn.dataset.label;
-      await copyAndTouch(pid, text, label);
+      await copyLoginValue(text, label);
       return;
     }
     if (e.target.closest(".eye-btn")) {
@@ -57,19 +52,48 @@ async function renderLogins() {
     return;
   }
   await renderLoginGrid();
-  loginTimer = setInterval(renderLoginGrid, 1000);
+  loginTimer = setInterval(tickLoginOtps, 1000);
 }
 
 async function renderLoginGrid() {
   const grid = $("#loginGrid");
   if (!grid) { clearInterval(loginTimer); return; }
   if (!loginEntries.length) {
-    grid.innerHTML = '<div class="mail-empty">No logins yet. Click "+ Add login" to create one.</div>';
+    grid.innerHTML = '<div class="mail-empty">No logins yet. Click + in the top bar to create one.</div>';
     return;
   }
   const now = Date.now();
   const cards = await Promise.all(loginEntries.map(e => buildLoginCard(e, now)));
   grid.innerHTML = cards.join("");
+}
+
+// In-place update of OTP rows only; avoids re-rendering grid every second.
+async function tickLoginOtps() {
+  const grid = $("#loginGrid");
+  if (!grid) { clearInterval(loginTimer); return; }
+  const now = Date.now();
+  const remain = totpSecondsLeft(now);
+  const pct = (remain / 30) * 100;
+  const low = remain <= 5;
+  for (const card of grid.querySelectorAll(".login-card")) {
+    const pid = card.dataset.pid;
+    const entry = loginEntries.find(x => x.public_id === pid);
+    if (!entry || !entry.totp_secret) continue;
+    let code = "------";
+    try { code = await totp(entry.totp_secret, now); } catch {}
+    const formatted = code.slice(0, 3) + " " + code.slice(3);
+    const otpEl = card.querySelector(".login-otp");
+    if (otpEl && otpEl.textContent !== formatted) otpEl.textContent = formatted;
+    const remainEl = card.querySelector(".login-otp-remain");
+    if (remainEl) remainEl.textContent = remain + "s";
+    const copyBtn = card.querySelector('.login-copy[data-label="OTP"]');
+    if (copyBtn) copyBtn.dataset.value = code;
+    const bar = card.querySelector(".progress .bar");
+    if (bar) {
+      bar.style.width = pct + "%";
+      bar.classList.toggle("low", low);
+    }
+  }
 }
 
 async function buildLoginCard(e, now) {
@@ -93,8 +117,7 @@ async function buildLoginCard(e, now) {
   if (e.totp_secret) {
     let code = "------";
     try { code = await totp(e.totp_secret, now); } catch {}
-    const sec = Math.floor(now / 1000);
-    const remain = 30 - (sec % 30);
+    const remain = totpSecondsLeft(now);
     const pct = (remain / 30) * 100;
     const low = remain <= 5 ? " low" : "";
     const formatted = code.slice(0, 3) + " " + code.slice(3);
@@ -118,19 +141,11 @@ async function buildLoginCard(e, now) {
     </div>`;
 }
 
-async function copyAndTouch(pid, text, label) {
+async function copyLoginValue(text, label) {
   try {
     await navigator.clipboard.writeText(text);
     toast("Copied " + label);
   } catch { toast("Copy failed"); return; }
-  const idx = loginEntries.findIndex(x => x.public_id === pid);
-  if (idx > 0) {
-    const [entry] = loginEntries.splice(idx, 1);
-    entry.updated_at = new Date().toISOString();
-    loginEntries.unshift(entry);
-    renderLoginGrid();
-  }
-  fetch("/api/logins/" + pid + "/touch", { method: "PUT" }).catch(() => {});
 }
 
 function typeSuggestions() {

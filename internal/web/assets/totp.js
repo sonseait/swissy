@@ -12,9 +12,17 @@ function b32decode(s) {
   return new Uint8Array(out);
 }
 
+function totpStep(t = Date.now()) {
+  return Math.floor(t / 30000);
+}
+
+function totpSecondsLeft(t = Date.now()) {
+  return 30 - (Math.floor(t / 1000) % 30);
+}
+
 async function totp(secretB32, t = Date.now()) {
   const key = b32decode(secretB32);
-  const counter = Math.floor(t / 1000 / 30);
+  const counter = totpStep(t);
   const buf = new ArrayBuffer(8);
   const dv = new DataView(buf);
   dv.setUint32(4, counter & 0xffffffff);

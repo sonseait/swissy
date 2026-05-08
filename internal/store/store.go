@@ -76,6 +76,39 @@ CREATE TABLE IF NOT EXISTS logins (
 	updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_logins_updated ON logins(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	public_id TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS webhook_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	hook_public_id TEXT NOT NULL,
+	method TEXT NOT NULL,
+	path TEXT NOT NULL DEFAULT '',
+	query TEXT NOT NULL DEFAULT '',
+	headers TEXT NOT NULL DEFAULT '',
+	body TEXT NOT NULL DEFAULT '',
+	content_type TEXT NOT NULL DEFAULT '',
+	remote_addr TEXT NOT NULL DEFAULT '',
+	size INTEGER NOT NULL DEFAULT 0,
+	received_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_events ON webhook_events(hook_public_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS pastes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	public_id TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL DEFAULT '',
+	language TEXT NOT NULL DEFAULT 'plain',
+	body TEXT NOT NULL,
+	size INTEGER NOT NULL DEFAULT 0,
+	expires_at TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pastes_created ON pastes(created_at DESC);
 `
 
 // NewPublicID returns a 10-char lowercase base32 random id suitable for shareable URLs.
