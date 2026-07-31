@@ -118,8 +118,13 @@ async function renderTOTPs() {
       return;
     }
     try {
-      await navigator.clipboard.writeText(card.dataset.code);
-      toast("Copied " + card.dataset.code);
+      const entry = totpEntries.find(x => String(x.id) === String(card.dataset.id));
+      const code = entry ? await totp(entry.secret) : card.dataset.code;
+      card.dataset.code = code;
+      const codeEl = card.querySelector(".code");
+      if (codeEl) codeEl.textContent = code.slice(0,3) + " " + code.slice(3);
+      await navigator.clipboard.writeText(code);
+      toast("Copied " + code);
     } catch { toast("Copy failed"); }
   });
   totpEntries = await api("/api/totps");
@@ -445,15 +450,24 @@ function renderMailHeader(domains, addr) {
 
   const openLocal = $("#openLocal");
   const ddDomain = $("#ddDomain");
-  openLocal.addEventListener("paste", e => {
-    const text = e.clipboardData?.getData("text/plain") || "";
-    const parsed = parseMailboxAddress(text);
-    if (!parsed) return;
-    e.preventDefault();
+  const syncMailboxAddress = (raw, notifyMissingDomain = false) => {
+    const parsed = parseMailboxAddress(raw);
+    if (!parsed) return false;
     openLocal.value = parsed.local;
-    if (!setDropdownValue(ddDomain, parsed.domain)) {
+    if (!setDropdownValue(ddDomain, parsed.domain) && notifyMissingDomain) {
       toast("Domain not found: " + parsed.domain);
     }
+    return true;
+  };
+  openLocal.addEventListener("paste", e => {
+    const text = e.clipboardData?.getData("text/plain") || "";
+    if (!parseMailboxAddress(text)) return;
+    e.preventDefault();
+    syncMailboxAddress(text, true);
+  });
+  openLocal.addEventListener("input", () => {
+    const value = openLocal.value.trim();
+    if (value.includes("@")) syncMailboxAddress(value, false);
   });
 
   $("#randomBtn").addEventListener("click", async () => {
@@ -471,6 +485,7 @@ function renderMailHeader(domains, addr) {
 
   $("#openForm").addEventListener("submit", async e => {
     e.preventDefault();
+    syncMailboxAddress(openLocal.value, false);
     const l = openLocal.value.trim().toLowerCase();
     const d = ddDomain.dataset.value;
     if (!l || !d || d === "__add__") { toast("Enter email & domain"); return; }
@@ -574,13 +589,15 @@ function bindDropdown(root, onPick) {
 }
 
 function parseMailboxAddress(raw) {
-  const text = String(raw || "").trim();
+  const text = String(raw || "").trim().replace(/^mailto:/i, "");
   if (!text.includes("@")) return null;
-  const match = text.match(/<?\s*([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})\s*>?/i);
+  const angle = text.match(/<\s*([^<>\s@]+@[^<>\s@]+)\s*>/);
+  const candidate = angle ? angle[1] : text.replace(/^["']|["']$/g, "").trim();
+  const match = candidate.match(/^\s*([^@\s]+)@([^@\s]+)\s*$/);
   if (!match) return null;
   return {
     local: match[1].toLowerCase(),
-    domain: match[2].toLowerCase(),
+    domain: match[2].replace(/[>;,]+$/g, "").toLowerCase(),
   };
 }
 

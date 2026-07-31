@@ -30,8 +30,19 @@ async function renderLogins() {
     }
     const copyBtn = e.target.closest(".login-copy");
     if (copyBtn) {
-      const text = copyBtn.dataset.value;
+      let text = copyBtn.dataset.value;
       const label = copyBtn.dataset.label;
+      if (label === "OTP") {
+        const entry = loginEntries.find(x => x.public_id === pid);
+        if (entry?.totp_secret) {
+          text = await totp(entry.totp_secret);
+          copyBtn.dataset.value = text;
+          const otpEl = card.querySelector(".login-otp");
+          if (otpEl) otpEl.textContent = text.slice(0, 3) + " " + text.slice(3);
+          const remainEl = card.querySelector(".login-otp-remain");
+          if (remainEl) remainEl.textContent = totpSecondsLeft() + "s";
+        }
+      }
       await copyLoginValue(text, label);
       return;
     }
