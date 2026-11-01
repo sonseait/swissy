@@ -1,6 +1,6 @@
-IMAGE := cr.0xh4ck3d.dev/c/swissy:latest
+IMAGE := sgp.vultrcr.com/695w/swissy:latest
 
-.PHONY: run build image push tidy clean
+.PHONY: run build image push docker-run tidy clean
 
 tidy:
 	go mod tidy
@@ -13,15 +13,17 @@ build:
 	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/swissy ./cmd/swissy
 
 image:
-	docker build -t $(IMAGE) .
+	docker build --platform linux/amd64 -t $(IMAGE) .
 
 push: image
 	docker push $(IMAGE)
 
 docker-run: image
+	mkdir -p ./data
 	docker run --rm \
+	  --user "$$(id -u):$$(id -g)" \
 	  -p 8080:8080 -p 25:25 \
-	  -v $(PWD)/data:/data \
+	  -v "$(CURDIR)/data:/data" \
 	  --env-file ./.env \
 	  $(IMAGE)
 
