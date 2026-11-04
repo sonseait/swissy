@@ -1,4 +1,4 @@
-IMAGE := sgp.vultrcr.com/695w/swissy:latest
+IMAGE := ecr.swissy.shop/c/swissy:latest
 
 .PHONY: run build image push docker-run tidy clean
 
