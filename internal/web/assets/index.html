@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>swissy</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="mask-icon" href="/favicon.svg" color="#69d1bf" />
+<script>
+  document.documentElement.setAttribute("data-theme", "dark");
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/vendor/highlight.css" />
+</head>
+<body>
+  <div class="mesh">
+    <span class="blob blob-a"></span>
+    <span class="blob blob-b"></span>
+    <span class="blob blob-c"></span>
+    <span class="grain"></span>
+  </div>
+  <aside class="sidebar rail">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-text">swissy</span>
+    </div>
+    <nav>
+      <a href="#/totps" data-route="totps">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>TOTPs</span>
+      </a>
+      <a href="#/mails" data-route="mails">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+        <span>Mails</span>
+      </a>
+      <a href="#/logins" data-route="logins">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2 15 8l-2-2-4 4m6-6 6 6-4 4-6-6m-2 2L3 21v-3l6-6"/></svg>
+        <span>Logins</span>
+      </a>
+      <a href="#/text" data-route="text">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+        <span>Text</span>
+      </a>
+      <a href="#/time" data-route="time">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span>Time</span>
+      </a>
+      <a href="#/image" data-route="image">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+        <span>Image</span>
+      </a>
+      <a href="#/md" data-route="md">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9l3 3 3-3v6m4-6v6m-2-2 2 2 2-2"/></svg>
+        <span>Markdown</span>
+      </a>
+      <a href="#/qr" data-route="qr">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3m4 0v4h-4m-3 0v-3"/></svg>
+        <span>QR</span>
+      </a>
+      <a href="#/pastes" data-route="pastes">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+        <span>Pastes</span>
+      </a>
+      <a href="#/webhooks" data-route="webhooks">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 4 4 6 4 10h4"/><circle cx="18" cy="14" r="3"/><path d="M6 14a3 3 0 1 1 3 3h-1"/></svg>
+        <span>Webhooks</span>
+      </a>
+    </nav>
+    <div class="sidebar-content" id="sidebarContent"></div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <div class="topbar-crumb">
+        <span class="crumb-dot"></span>
+        <span class="crumb-label" id="crumbLabel">Dashboard</span>
+      </div>
+      <div class="topbar-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="globalSearch" placeholder="Jump to…" spellcheck="false" autocomplete="off" />
+        <kbd>⌘K</kbd>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-pill" id="quickAdd" title="Quick add">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <span class="sync-pill" title="All systems nominal">
+          <span class="sync-dot"></span>
+          <span>live</span>
+        </span>
+      </div>
+    </header>
+    <main id="main"></main>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box" id="modalBox"></div>
+  </div>
+
+  <div id="toast" class="toast">Copied</div>
+  <div id="toastStack" class="toast-stack"></div>
+
+  <script type="module">
+    import { CodeJar } from "/vendor/codejar.min.js";
+    window.CodeJar = CodeJar;
+  </script>
+  <script src="/vendor/js-yaml.min.js"></script>
+  <script src="/vendor/sql-formatter.min.js"></script>
+  <script src="/vendor/marked.min.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
+  <script src="/totp.js"></script>
+  <script src="/logins.js"></script>
+  <script src="/text.js"></script>
+  <script src="/time.js"></script>
+  <script src="/image.js"></script>
+  <script src="/md.js"></script>
+  <script src="/qr.js"></script>
+  <script src="/pastes.js"></script>
+  <script src="/webhooks.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

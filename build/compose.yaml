@@ -1,0 +1,7 @@
+services:
+  swissy:
+    image: ${REGISTRY:?Set REGISTRY in build/.env or the environment}/${PROJECT:?Set PROJECT in build/.env or the environment}/swissy:latest
+    platform: ${BUILD_PLATFORM:-linux/amd64}
+    build:
+      context: ..
+      dockerfile: Dockerfile
